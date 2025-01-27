@@ -1,0 +1,24 @@
+# Credentials and Certificates
+.env
+certs/
+*.crt
+*.key
+*.pem
+
+# Binary files
+k8s-cli
+*.exe
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+
+# Go specific
+*.test
+*.out
+go.work
+
+# OS specific
+.DS_Store
+Thumbs.db
