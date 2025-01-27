@@ -11,6 +11,7 @@ import (
 	"tamerGoClient/pkg/auth"
 	"tamerGoClient/pkg/utils"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -66,11 +67,11 @@ func HandleInfoMenu() {
 		case 2:
 			listNodes()
 		case 3:
-			listPods()
+			ListPods()
 		case 4:
-			listServices()
+			listServicesWithDetails()
 		case 5:
-			listDeployments()
+			listDeploymentsWithDetails()
 		case 6:
 			listConfigMaps()
 		case 7:
@@ -193,7 +194,7 @@ func listNodes() {
 	}
 }
 
-func listPods() {
+func ListPods() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -432,104 +433,106 @@ func GetPodEvents(pod *corev1.Pod) {
 	}
 }
 
-func listServices() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+// Eski liste fonksiyonları Deployment ve Service için
+/*
+	func listServices() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	services, err := auth.KubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		fmt.Printf("Service listesi alınamadı: %v\n", err)
-		return
-	}
-
-	fmt.Println("\nService Listesi:")
-	fmt.Printf("%-25s %-15s %-10s %-15s %-15s %-20s\n",
-		"İSİM", "NAMESPACE", "TİP", "CLUSTER-IP", "EXTERNAL-IP", "PORTS")
-
-	for _, svc := range services.Items {
-		// Port bilgilerini formatla
-		ports := []string{}
-		for _, port := range svc.Spec.Ports {
-			portStr := fmt.Sprintf("%d:%d/%s",
-				port.Port,
-				port.TargetPort.IntVal,
-				port.Protocol)
-			ports = append(ports, portStr)
+		services, err := auth.KubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			fmt.Printf("Service listesi alınamadı: %v\n", err)
+			return
 		}
 
-		externalIP := "N/A"
-		if len(svc.Status.LoadBalancer.Ingress) > 0 {
-			externalIP = svc.Status.LoadBalancer.Ingress[0].IP
-		}
-
+		fmt.Println("\nService Listesi:")
 		fmt.Printf("%-25s %-15s %-10s %-15s %-15s %-20s\n",
-			svc.Name,
-			svc.Namespace,
-			string(svc.Spec.Type),
-			svc.Spec.ClusterIP,
-			externalIP,
-			strings.Join(ports, ","))
+			"İSİM", "NAMESPACE", "TİP", "CLUSTER-IP", "EXTERNAL-IP", "PORTS")
 
-		// Selector bilgilerini göster
-		if len(svc.Spec.Selector) > 0 {
-			fmt.Println("  Selectors:")
-			for key, value := range svc.Spec.Selector {
-				fmt.Printf("    %s: %s\n", key, value)
+		for _, svc := range services.Items {
+			// Port bilgilerini formatla
+			ports := []string{}
+			for _, port := range svc.Spec.Ports {
+				portStr := fmt.Sprintf("%d:%d/%s",
+					port.Port,
+					port.TargetPort.IntVal,
+					port.Protocol)
+				ports = append(ports, portStr)
 			}
-		}
-		fmt.Println()
-	}
-}
 
-func listDeployments() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+			externalIP := "N/A"
+			if len(svc.Status.LoadBalancer.Ingress) > 0 {
+				externalIP = svc.Status.LoadBalancer.Ingress[0].IP
+			}
 
-	deployments, err := auth.KubeClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		fmt.Printf("Deployment listesi alınamadı: %v\n", err)
-		return
-	}
+			fmt.Printf("%-25s %-15s %-10s %-15s %-15s %-20s\n",
+				svc.Name,
+				svc.Namespace,
+				string(svc.Spec.Type),
+				svc.Spec.ClusterIP,
+				externalIP,
+				strings.Join(ports, ","))
 
-	fmt.Println("\nDeployment Listesi:")
-	fmt.Printf("%-25s %-15s %-10s %-10s %-15s %-15s\n",
-		"İSİM", "NAMESPACE", "READY", "UP-TO-DATE", "AVAILABLE", "AGE")
-
-	for _, deploy := range deployments.Items {
-		age := time.Since(deploy.CreationTimestamp.Time).Round(time.Second)
-
-		fmt.Printf("%-25s %-15s %d/%d %-10d %-15d %-15s\n",
-			deploy.Name,
-			deploy.Namespace,
-			deploy.Status.ReadyReplicas,
-			deploy.Status.Replicas,
-			deploy.Status.UpdatedReplicas,
-			deploy.Status.AvailableReplicas,
-			age.String())
-
-		// Detaylı bilgileri göster
-		fmt.Printf("  Strategy: %s\n", deploy.Spec.Strategy.Type)
-		if len(deploy.Spec.Template.Spec.Containers) > 0 {
-			fmt.Println("  Containers:")
-			for _, container := range deploy.Spec.Template.Spec.Containers {
-				fmt.Printf("    - %s:\n", container.Name)
-				fmt.Printf("      Image: %s\n", container.Image)
-				if len(container.Resources.Requests) > 0 {
-					fmt.Printf("      Requests: CPU=%s, Memory=%s\n",
-						container.Resources.Requests.Cpu().String(),
-						container.Resources.Requests.Memory().String())
-				}
-				if len(container.Resources.Limits) > 0 {
-					fmt.Printf("      Limits: CPU=%s, Memory=%s\n",
-						container.Resources.Limits.Cpu().String(),
-						container.Resources.Limits.Memory().String())
+			// Selector bilgilerini göster
+			if len(svc.Spec.Selector) > 0 {
+				fmt.Println("  Selectors:")
+				for key, value := range svc.Spec.Selector {
+					fmt.Printf("    %s: %s\n", key, value)
 				}
 			}
+			fmt.Println()
 		}
-		fmt.Println()
 	}
-}
 
+	func listDeployments() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		deployments, err := auth.KubeClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+		if err != nil {
+			fmt.Printf("Deployment listesi alınamadı: %v\n", err)
+			return
+		}
+
+		fmt.Println("\nDeployment Listesi:")
+		fmt.Printf("%-25s %-15s %-10s %-10s %-15s %-15s\n",
+			"İSİM", "NAMESPACE", "READY", "UP-TO-DATE", "AVAILABLE", "AGE")
+
+		for _, deploy := range deployments.Items {
+			age := time.Since(deploy.CreationTimestamp.Time).Round(time.Second)
+
+			fmt.Printf("%-25s %-15s %d/%d %-10d %-15d %-15s\n",
+				deploy.Name,
+				deploy.Namespace,
+				deploy.Status.ReadyReplicas,
+				deploy.Status.Replicas,
+				deploy.Status.UpdatedReplicas,
+				deploy.Status.AvailableReplicas,
+				age.String())
+
+			// Detaylı bilgileri göster
+			fmt.Printf("  Strategy: %s\n", deploy.Spec.Strategy.Type)
+			if len(deploy.Spec.Template.Spec.Containers) > 0 {
+				fmt.Println("  Containers:")
+				for _, container := range deploy.Spec.Template.Spec.Containers {
+					fmt.Printf("    - %s:\n", container.Name)
+					fmt.Printf("      Image: %s\n", container.Image)
+					if len(container.Resources.Requests) > 0 {
+						fmt.Printf("      Requests: CPU=%s, Memory=%s\n",
+							container.Resources.Requests.Cpu().String(),
+							container.Resources.Requests.Memory().String())
+					}
+					if len(container.Resources.Limits) > 0 {
+						fmt.Printf("      Limits: CPU=%s, Memory=%s\n",
+							container.Resources.Limits.Cpu().String(),
+							container.Resources.Limits.Memory().String())
+					}
+				}
+			}
+			fmt.Println()
+		}
+	}
+*/
 func listConfigMaps() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -788,4 +791,258 @@ func accessModesToString(modes []corev1.PersistentVolumeAccessMode) string {
 		strs[i] = string(mode)
 	}
 	return strings.Join(strs, ",")
+}
+
+func listDeploymentsWithDetails() {
+	ctx := context.Background()
+	deployments, err := auth.KubeClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		fmt.Printf("Deployment listesi alınamadı: %v\n", err)
+		return
+	}
+
+	fmt.Println("\nDeployment Listesi:")
+	fmt.Printf("%-5s %-30s %-15s %-10s %-10s %-10s\n",
+		"NO", "İSİM", "NAMESPACE", "READY", "UP-TO-DATE", "AVAILABLE")
+
+	deployList := make([]appsv1.Deployment, 0)
+	for i, deploy := range deployments.Items {
+		fmt.Printf("%-5d %-30s %-15s %d/%d     %-10d %-10d\n",
+			i+1,
+			deploy.Name,
+			deploy.Namespace,
+			deploy.Status.ReadyReplicas,
+			deploy.Status.Replicas,
+			deploy.Status.UpdatedReplicas,
+			deploy.Status.AvailableReplicas)
+		deployList = append(deployList, deploy)
+	}
+
+	fmt.Print("\nDeployment detayları için numara girin (0 için geri dön): ")
+	var choice int
+	fmt.Scanf("%d", &choice)
+
+	if choice > 0 && choice <= len(deployList) {
+		ShowDeploymentDetails(deployList[choice-1])
+	}
+}
+
+func listServicesWithDetails() {
+	ctx := context.Background()
+	services, err := auth.KubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		fmt.Printf("Service listesi alınamadı: %v\n", err)
+		return
+	}
+
+	fmt.Println("\nService Listesi:")
+	fmt.Printf("%-5s %-30s %-15s %-10s %-15s\n",
+		"NO", "İSİM", "NAMESPACE", "TYPE", "CLUSTER-IP")
+
+	svcList := make([]corev1.Service, 0)
+	for i, svc := range services.Items {
+		fmt.Printf("%-5d %-30s %-15s %-10s %-15s\n",
+			i+1,
+			svc.Name,
+			svc.Namespace,
+			svc.Spec.Type,
+			svc.Spec.ClusterIP)
+		svcList = append(svcList, svc)
+	}
+
+	fmt.Print("\nService detayları için numara girin (0 için geri dön): ")
+	var choice int
+	fmt.Scanf("%d", &choice)
+
+	if choice > 0 && choice <= len(svcList) {
+		ShowServiceDetails(svcList[choice-1])
+	}
+}
+
+func ShowDeploymentDetails(deploy appsv1.Deployment) {
+	for {
+		// Her seferinde güncel deployment bilgilerini al
+		updatedDeploy, err := auth.KubeClient.AppsV1().Deployments(deploy.Namespace).
+			Get(context.Background(), deploy.Name, metav1.GetOptions{})
+		if err != nil {
+			fmt.Printf("Deployment bilgileri alınamadı: %v\n", err)
+			return
+		}
+
+		fmt.Printf("\n=== Deployment Detayları: %s ===\n", updatedDeploy.Name)
+		fmt.Println("1. Genel Bilgiler")
+		fmt.Println("2. Pod Template")
+		fmt.Println("3. Replica Durumu")
+		fmt.Println("4. İlgili Podları Görüntüle")
+		fmt.Println("5. Events")
+		fmt.Println("6. Deployment Listesine Dön")
+		fmt.Print("Seçiminiz (1-6): ")
+
+		var choice int
+		fmt.Scanf("%d", &choice)
+
+		switch choice {
+		case 1:
+			showDeploymentInfo(updatedDeploy)
+		case 2:
+			showPodTemplate(updatedDeploy)
+		case 3:
+			showReplicaStatus(updatedDeploy)
+		case 4:
+			showDeploymentPods(updatedDeploy)
+		case 5:
+			getDeploymentEvents(updatedDeploy)
+		case 6:
+			listDeploymentsWithDetails() // Deployment listesine geri dön
+			return
+		default:
+			fmt.Println("Geçersiz seçim!")
+		}
+	}
+}
+
+func showDeploymentPods(deploy *appsv1.Deployment) {
+	// Deployment'a ait podları bul
+	selector, err := metav1.LabelSelectorAsSelector(deploy.Spec.Selector)
+	if err != nil {
+		fmt.Printf("Label selector oluşturulamadı: %v\n", err)
+		return
+	}
+
+	pods, err := auth.KubeClient.CoreV1().Pods(deploy.Namespace).List(context.Background(), metav1.ListOptions{
+		LabelSelector: selector.String(),
+	})
+	if err != nil {
+		fmt.Printf("Podlar alınamadı: %v\n", err)
+		return
+	}
+
+	if len(pods.Items) == 0 {
+		fmt.Println("\nBu deployment'a ait çalışan pod bulunamadı!")
+		return
+	}
+
+	fmt.Printf("\n%s Deployment'ına ait Podlar:\n", deploy.Name)
+	fmt.Printf("%-5s %-30s %-12s %-15s\n", "NO", "İSİM", "DURUM", "NODE")
+
+	podList := make([]corev1.Pod, 0)
+	for i, pod := range pods.Items {
+		fmt.Printf("%-5d %-30s %-12s %-15s\n",
+			i+1,
+			pod.Name,
+			string(pod.Status.Phase),
+			pod.Spec.NodeName)
+		podList = append(podList, pod)
+	}
+
+	fmt.Print("\nPod detayları için pod numarası girin (0 için geri dön): ")
+	var choice int
+	fmt.Scanf("%d", &choice)
+
+	if choice > 0 && choice <= len(podList) {
+		ShowPodDetails(podList[choice-1])
+	}
+}
+
+func showDeploymentInfo(deploy *appsv1.Deployment) {
+	fmt.Printf("\nDeployment Bilgileri - %s:\n", deploy.Name)
+	fmt.Printf("  Strategy: %s\n", deploy.Spec.Strategy.Type)
+	if len(deploy.Spec.Template.Spec.Containers) > 0 {
+		fmt.Println("  Containers:")
+		for _, container := range deploy.Spec.Template.Spec.Containers {
+			fmt.Printf("    - %s:\n", container.Name)
+			fmt.Printf("      Image: %s\n", container.Image)
+			if len(container.Resources.Requests) > 0 {
+				fmt.Printf("      Requests: CPU=%s, Memory=%s\n",
+					container.Resources.Requests.Cpu().String(),
+					container.Resources.Requests.Memory().String())
+			}
+			if len(container.Resources.Limits) > 0 {
+				fmt.Printf("      Limits: CPU=%s, Memory=%s\n",
+					container.Resources.Limits.Cpu().String(),
+					container.Resources.Limits.Memory().String())
+			}
+		}
+	}
+	fmt.Println()
+}
+
+func showPodTemplate(deploy *appsv1.Deployment) {
+	fmt.Printf("\nPod Template - %s:\n", deploy.Name)
+	if len(deploy.Spec.Template.Spec.Containers) > 0 {
+		fmt.Println("  Containers:")
+		for _, container := range deploy.Spec.Template.Spec.Containers {
+			fmt.Printf("    - %s:\n", container.Name)
+			fmt.Printf("      Image: %s\n", container.Image)
+			if len(container.Resources.Requests) > 0 {
+				fmt.Printf("      Requests: CPU=%s, Memory=%s\n",
+					container.Resources.Requests.Cpu().String(),
+					container.Resources.Requests.Memory().String())
+			}
+			if len(container.Resources.Limits) > 0 {
+				fmt.Printf("      Limits: CPU=%s, Memory=%s\n",
+					container.Resources.Limits.Cpu().String(),
+					container.Resources.Limits.Memory().String())
+			}
+		}
+	}
+	fmt.Println()
+}
+
+func showReplicaStatus(deploy *appsv1.Deployment) {
+	fmt.Printf("\nReplica Durumu - %s:\n", deploy.Name)
+	fmt.Printf("  Ready Replicas: %d\n", deploy.Status.ReadyReplicas)
+	fmt.Printf("  Replicas: %d\n", deploy.Status.Replicas)
+	fmt.Printf("  Updated Replicas: %d\n", deploy.Status.UpdatedReplicas)
+	fmt.Printf("  Available Replicas: %d\n", deploy.Status.AvailableReplicas)
+	fmt.Println()
+}
+
+func getDeploymentEvents(deploy *appsv1.Deployment) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	events, err := auth.KubeClient.CoreV1().Events(deploy.Namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("involvedObject.name=%s", deploy.Name),
+	})
+	if err != nil {
+		fmt.Printf("Events alınamadı: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\nDeployment Events - %s:\n", deploy.Name)
+	fmt.Printf("%-20s %-12s %-20s %s\n", "ZAMAN", "TİP", "SEBEP", "MESAJ")
+	for _, event := range events.Items {
+		fmt.Printf("%-20s %-12s %-20s %s\n",
+			event.LastTimestamp.Format("2006-01-02 15:04:05"),
+			event.Type,
+			event.Reason,
+			event.Message)
+	}
+}
+
+func ShowServiceDetails(svc corev1.Service) {
+	fmt.Printf("\nService Detayları - %s:\n", svc.Name)
+	fmt.Printf("  Type: %s\n", svc.Spec.Type)
+	fmt.Printf("  Cluster IP: %s\n", svc.Spec.ClusterIP)
+
+	// Port bilgilerini göster
+	ports := []string{}
+	for _, port := range svc.Spec.Ports {
+		portStr := fmt.Sprintf("%d:%d/%s",
+			port.Port,
+			port.TargetPort.IntVal,
+			port.Protocol)
+		ports = append(ports, portStr)
+	}
+	fmt.Printf("  Ports: %s\n", strings.Join(ports, ", "))
+
+	// Selector bilgilerini göster
+	if len(svc.Spec.Selector) > 0 {
+		fmt.Println("  Selectors:")
+		for key, value := range svc.Spec.Selector {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
+	fmt.Println()
 }

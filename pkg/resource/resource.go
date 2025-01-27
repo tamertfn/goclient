@@ -139,43 +139,12 @@ func handlePodMenu() {
 		case 2:
 			deletePod()
 		case 3:
-			listPods()
+			info.ListPods()
 		case 4:
 			return
 		default:
 			fmt.Println("Geçersiz seçim!")
 		}
-	}
-}
-
-func listPods() {
-	ctx := context.Background()
-	pods, err := auth.KubeClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		fmt.Printf("Pod listesi alınamadı: %v\n", err)
-		return
-	}
-
-	fmt.Println("\nMevcut Podlar:")
-	fmt.Printf("%-5s %-30s %-20s %-12s %-15s\n", "NO", "İSİM", "NAMESPACE", "DURUM", "NODE")
-
-	podList := make([]corev1.Pod, 0)
-	for i, pod := range pods.Items {
-		fmt.Printf("%-5d %-30s %-20s %-12s %-15s\n",
-			i+1,
-			pod.Name,
-			pod.Namespace,
-			string(pod.Status.Phase),
-			pod.Spec.NodeName)
-		podList = append(podList, pod)
-	}
-
-	fmt.Print("\nPod detayları için pod numarası girin (0 için geri dön): ")
-	var choice int
-	fmt.Scanf("%d", &choice)
-
-	if choice > 0 && choice <= len(podList) {
-		info.ShowPodDetails(podList[choice-1])
 	}
 }
 
@@ -220,7 +189,7 @@ func deletePod() {
 			} else {
 				fmt.Println("Pod başarıyla silindi! Etkilerin görüntülenmesi için bir süre bekleyiniz...")
 				time.Sleep(3 * time.Second)
-				listPods()
+				info.ListPods()
 			}
 		}
 	}
