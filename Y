@@ -1,0 +1,115 @@
+---
+# Özel namespace oluştur
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: client-access
+  labels:
+    environment: production
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: client-access-sa
+  namespace: client-access
+  annotations:
+    description: "Production service account for client access"
+---
+# ClusterRole with extended permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: client-access-role
+  labels:
+    environment: production
+rules:
+# Core API group resources
+- apiGroups: [""]
+  resources:
+  - namespaces
+  - nodes
+  - pods
+  - pods/log
+  - services
+  - configmaps
+  - secrets
+  - persistentvolumes
+  - persistentvolumeclaims
+  verbs: ["get", "list", "watch", "create", "delete"]
+
+# Apps API group resources
+- apiGroups: ["apps"]
+  resources:
+  - deployments
+  - statefulsets
+  - daemonsets
+  - replicasets
+  verbs: ["get", "list", "watch", "create", "delete"]
+
+# Metrics API group resources
+- apiGroups: ["metrics.k8s.io"]
+  resources:
+  - pods
+  - nodes
+  verbs: ["get", "list", "watch"]
+
+# Networking API group resources
+- apiGroups: ["networking.k8s.io"]
+  resources:
+  - ingresses
+  - ingressclasses
+  verbs: ["get", "list", "watch"]
+
+# Storage API group resources
+- apiGroups: ["storage.k8s.io"]
+  resources:
+  - storageclasses
+  verbs: ["get", "list", "watch"]
+
+# Batch API group resources
+- apiGroups: ["batch"]
+  resources:
+  - jobs
+  - cronjobs
+  verbs: ["get", "list", "watch"]
+
+# RBAC API group resources (for viewing roles and bindings)
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources:
+  - roles
+  - rolebindings
+  - clusterroles
+  - clusterrolebindings
+  verbs: ["get", "list", "watch"]
+
+# Events for troubleshooting
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: client-access-binding
+  labels:
+    environment: production
+subjects:
+- kind: ServiceAccount
+  name: client-access-sa
+  namespace: client-access
+roleRef:
+  kind: ClusterRole
+  name: client-access-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Long-lived token için Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: client-access-token
+  namespace: client-access
+  annotations:
+    kubernetes.io/service-account.name: client-access-sa
+type: kubernetes.io/service-account-token
