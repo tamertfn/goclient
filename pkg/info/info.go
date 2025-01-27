@@ -69,9 +69,9 @@ func HandleInfoMenu() {
 		case 3:
 			ListPods()
 		case 4:
-			listServicesWithDetails()
+			ListServicesWithDetails()
 		case 5:
-			listDeploymentsWithDetails()
+			ListDeploymentsWithDetails()
 		case 6:
 			listConfigMaps()
 		case 7:
@@ -793,7 +793,7 @@ func accessModesToString(modes []corev1.PersistentVolumeAccessMode) string {
 	return strings.Join(strs, ",")
 }
 
-func listDeploymentsWithDetails() {
+func ListDeploymentsWithDetails() {
 	ctx := context.Background()
 	deployments, err := auth.KubeClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -827,7 +827,7 @@ func listDeploymentsWithDetails() {
 	}
 }
 
-func listServicesWithDetails() {
+func ListServicesWithDetails() {
 	ctx := context.Background()
 	services, err := auth.KubeClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -893,7 +893,7 @@ func ShowDeploymentDetails(deploy appsv1.Deployment) {
 		case 5:
 			getDeploymentEvents(updatedDeploy)
 		case 6:
-			listDeploymentsWithDetails() // Deployment listesine geri dön
+			ListDeploymentsWithDetails() // Deployment listesine geri dön
 			return
 		default:
 			fmt.Println("Geçersiz seçim!")
@@ -1055,7 +1055,7 @@ func ShowServiceDetails(svc corev1.Service) {
 		case 5:
 			getServiceEvents(updatedSvc)
 		case 6:
-			listServicesWithDetails()
+			ListServicesWithDetails()
 			return
 		default:
 			fmt.Println("Geçersiz seçim!")
