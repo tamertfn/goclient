@@ -1,12 +1,15 @@
 package info
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"tamerGoClient/pkg/auth"
+	"tamerGoClient/pkg/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -201,38 +204,209 @@ func listPods() {
 	}
 
 	fmt.Println("\nPod Listesi:")
-	fmt.Printf("%-30s %-15s %-12s %-15s %-15s %-15s\n",
-		"İSİM", "NAMESPACE", "DURUM", "NODE", "IP", "RESTART")
+	fmt.Printf("%-5s %-30s %-15s %-12s %-15s %-15s\n",
+		"NO", "İSİM", "NAMESPACE", "DURUM", "NODE", "IP")
 
-	for _, pod := range pods.Items {
-		// Container durumlarını topla
-		restarts := 0
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			restarts += int(containerStatus.RestartCount)
-		}
-
-		fmt.Printf("%-30s %-15s %-12s %-15s %-15s %-15d\n",
+	podList := make([]corev1.Pod, 0)
+	for i, pod := range pods.Items {
+		fmt.Printf("%-5d %-30s %-15s %-12s %-15s %-15s\n",
+			i+1,
 			pod.Name,
 			pod.Namespace,
 			string(pod.Status.Phase),
 			pod.Spec.NodeName,
-			pod.Status.PodIP,
-			restarts)
+			pod.Status.PodIP)
+		podList = append(podList, pod)
+	}
 
-		// Container detaylarını göster
-		fmt.Println("  Containers:")
+	fmt.Print("\nPod detayları için pod numarası girin (0 için ana menü): ")
+	var choice int
+	fmt.Scanf("%d", &choice)
+
+	if choice > 0 && choice <= len(podList) {
+		showPodDetails(podList[choice-1])
+	}
+}
+
+func showPodDetails(pod corev1.Pod) {
+	for {
+		fmt.Printf("\n=== Pod Detayları: %s ===\n", pod.Name)
+		fmt.Println("1. Genel Bilgiler")
+		fmt.Println("2. Container Durumları")
+		fmt.Println("3. Son Loglar")
+		fmt.Println("4. Canlı Log Takibi")
+		fmt.Println("5. Events")
+		fmt.Println("6. Önceki Menü")
+		fmt.Print("Seçiminiz (1-6): ")
+
+		var choice int
+		fmt.Scanf("%d", &choice)
+
+		switch choice {
+		case 1:
+			showPodGeneralInfo(pod)
+		case 2:
+			showPodContainerStatuses(pod)
+		case 3:
+			getPodLogs(pod.Name, pod.Namespace, false)
+		case 4:
+			getPodLogs(pod.Name, pod.Namespace, true)
+		case 5:
+			getPodEvents(pod)
+		case 6:
+			return
+		default:
+			fmt.Println("Geçersiz seçim!")
+		}
+	}
+}
+
+func showPodGeneralInfo(pod corev1.Pod) {
+	fmt.Printf("\nPod Adı: %s\n", pod.Name)
+	fmt.Printf("Namespace: %s\n", pod.Namespace)
+	fmt.Printf("Node: %s\n", pod.Spec.NodeName)
+	fmt.Printf("IP: %s\n", pod.Status.PodIP)
+	fmt.Printf("Oluşturulma: %s\n", pod.CreationTimestamp.Format("2006-01-02 15:04:05"))
+	fmt.Printf("Durum: %s\n", pod.Status.Phase)
+	fmt.Printf("QoS Sınıfı: %s\n", pod.Status.QOSClass)
+
+	if len(pod.Spec.Containers) > 0 {
+		fmt.Println("\nContainer'lar:")
 		for _, container := range pod.Spec.Containers {
-			fmt.Printf("    - %s:\n", container.Name)
-			fmt.Printf("      Image: %s\n", container.Image)
+			fmt.Printf("- %s (Image: %s)\n", container.Name, container.Image)
 			if len(container.Ports) > 0 {
-				fmt.Printf("      Ports: ")
+				fmt.Print("  Portlar: ")
 				for _, port := range container.Ports {
 					fmt.Printf("%d/%s ", port.ContainerPort, port.Protocol)
 				}
 				fmt.Println()
 			}
 		}
-		fmt.Println()
+	}
+}
+
+func showPodContainerStatuses(pod corev1.Pod) {
+	fmt.Printf("\nContainer Durumları - Pod: %s\n", pod.Name)
+	for _, status := range pod.Status.ContainerStatuses {
+		fmt.Printf("\nContainer: %s\n", status.Name)
+		fmt.Printf("Ready: %v\n", status.Ready)
+		fmt.Printf("Restart Count: %d\n", status.RestartCount)
+
+		if status.State.Running != nil {
+			fmt.Printf("Durum: Running (Başlangıç: %s)\n",
+				status.State.Running.StartedAt.Format("2006-01-02 15:04:05"))
+		} else if status.State.Waiting != nil {
+			fmt.Printf("Durum: Waiting (Sebep: %s)\n", status.State.Waiting.Reason)
+		} else if status.State.Terminated != nil {
+			fmt.Printf("Durum: Terminated (Sebep: %s, Kod: %d)\n",
+				status.State.Terminated.Reason,
+				status.State.Terminated.ExitCode)
+		}
+	}
+}
+
+func getPodLogs(podName, namespace string, follow bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	// Pod bilgilerini al
+	pod, err := auth.KubeClient.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		fmt.Printf("Pod bilgileri alınamadı: %v\n", err)
+		return
+	}
+
+	// Birden fazla container varsa seçim yaptır
+	containerName := ""
+	if len(pod.Spec.Containers) > 1 {
+		fmt.Println("\nContainer Listesi:")
+		for i, container := range pod.Spec.Containers {
+			fmt.Printf("%d. %s\n", i+1, container.Name)
+		}
+		fmt.Print("\nContainer seçin (1-" + fmt.Sprint(len(pod.Spec.Containers)) + "): ")
+		var choice int
+		fmt.Scanf("%d", &choice)
+
+		if choice > 0 && choice <= len(pod.Spec.Containers) {
+			containerName = pod.Spec.Containers[choice-1].Name
+		} else {
+			fmt.Println("Geçersiz seçim!")
+			return
+		}
+	} else if len(pod.Spec.Containers) == 1 {
+		containerName = pod.Spec.Containers[0].Name
+	}
+
+	podLogOpts := corev1.PodLogOptions{
+		Container: containerName,
+		Follow:    follow,
+		TailLines: utils.Int64(100),
+	}
+
+	req := auth.KubeClient.CoreV1().Pods(namespace).GetLogs(podName, &podLogOpts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		fmt.Printf("Log stream açılamadı: %v\n", err)
+		return
+	}
+	defer podLogs.Close()
+
+	if follow {
+		fmt.Println("\nCanlı log takibi başladı. Çıkmak için 'q' tuşuna basın...")
+
+		// Kullanıcı inputu için goroutine
+		go func() {
+			reader := bufio.NewReader(os.Stdin)
+			for {
+				char, _, err := reader.ReadRune()
+				if err != nil {
+					continue
+				}
+				if char == 'q' {
+					cancel() // Context'i iptal et
+					return
+				}
+			}
+		}()
+	}
+
+	scanner := bufio.NewScanner(podLogs)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nLog takibi sonlandırıldı.")
+			return
+		default:
+			fmt.Println(scanner.Text())
+			if !follow {
+				if scanner.Text() == "" {
+					break
+				}
+			}
+		}
+	}
+}
+
+func getPodEvents(pod corev1.Pod) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	events, err := auth.KubeClient.CoreV1().Events(pod.Namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("involvedObject.name=%s", pod.Name),
+	})
+	if err != nil {
+		fmt.Printf("Events alınamadı: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\nPod Events - %s:\n", pod.Name)
+	fmt.Printf("%-20s %-12s %-20s %s\n", "ZAMAN", "TİP", "SEBEP", "MESAJ")
+	for _, event := range events.Items {
+		fmt.Printf("%-20s %-12s %-20s %s\n",
+			event.LastTimestamp.Format("2006-01-02 15:04:05"),
+			event.Type,
+			event.Reason,
+			event.Message)
 	}
 }
 
