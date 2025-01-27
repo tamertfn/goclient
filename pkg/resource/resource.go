@@ -219,6 +219,8 @@ func deletePod() {
 				fmt.Printf("Pod silinemedi: %v\n", err)
 			} else {
 				fmt.Println("Pod başarıyla silindi! Etkilerin görüntülenmesi için bir süre bekleyiniz...")
+				time.Sleep(3 * time.Second)
+				listPods()
 			}
 		}
 	}
