@@ -1022,7 +1022,192 @@ func getDeploymentEvents(deploy *appsv1.Deployment) {
 }
 
 func ShowServiceDetails(svc corev1.Service) {
-	fmt.Printf("\nService Detayları - %s:\n", svc.Name)
+	for {
+		// Her seferinde güncel service bilgilerini al
+		updatedSvc, err := auth.KubeClient.CoreV1().Services(svc.Namespace).
+			Get(context.Background(), svc.Name, metav1.GetOptions{})
+		if err != nil {
+			fmt.Printf("Service bilgileri alınamadı: %v\n", err)
+			return
+		}
+
+		fmt.Printf("\n=== Service Detayları: %s ===\n", updatedSvc.Name)
+		fmt.Println("1. Genel Bilgiler")
+		fmt.Println("2. Port Bilgileri")
+		fmt.Println("3. Endpoint Bilgileri")
+		fmt.Println("4. Bağlı Podları Görüntüle")
+		fmt.Println("5. Events")
+		fmt.Println("6. Service Listesine Dön")
+		fmt.Print("Seçiminiz (1-6): ")
+
+		var choice int
+		fmt.Scanf("%d", &choice)
+
+		switch choice {
+		case 1:
+			showServiceInfo(updatedSvc)
+		case 2:
+			showServicePorts(updatedSvc)
+		case 3:
+			showServiceEndpoints(updatedSvc)
+		case 4:
+			showServicePods(updatedSvc)
+		case 5:
+			getServiceEvents(updatedSvc)
+		case 6:
+			listServicesWithDetails()
+			return
+		default:
+			fmt.Println("Geçersiz seçim!")
+		}
+	}
+}
+
+func showServicePods(svc *corev1.Service) {
+	// Service'in selector'ını kullanarak bağlı podları bul
+	if len(svc.Spec.Selector) == 0 {
+		fmt.Println("\nBu service herhangi bir pod'a bağlı değil (selector bulunamadı)")
+		return
+	}
+
+	// Selector'ı string formatına çevir
+	var selectorString []string
+	for key, value := range svc.Spec.Selector {
+		selectorString = append(selectorString, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Podları getir
+	pods, err := auth.KubeClient.CoreV1().Pods(svc.Namespace).List(context.Background(), metav1.ListOptions{
+		LabelSelector: strings.Join(selectorString, ","),
+	})
+	if err != nil {
+		fmt.Printf("Podlar alınamadı: %v\n", err)
+		return
+	}
+
+	if len(pods.Items) == 0 {
+		fmt.Println("\nBu service'e bağlı çalışan pod bulunamadı!")
+		return
+	}
+
+	fmt.Printf("\n%s Service'ine Bağlı Podlar:\n", svc.Name)
+	fmt.Printf("%-5s %-30s %-12s %-15s %-15s\n", "NO", "İSİM", "DURUM", "NODE", "POD IP")
+
+	podList := make([]corev1.Pod, 0)
+	for i, pod := range pods.Items {
+		fmt.Printf("%-5d %-30s %-12s %-15s %-15s\n",
+			i+1,
+			pod.Name,
+			string(pod.Status.Phase),
+			pod.Spec.NodeName,
+			pod.Status.PodIP)
+		podList = append(podList, pod)
+	}
+
+	fmt.Print("\nPod detayları için pod numarası girin (0 için geri dön): ")
+	var choice int
+	fmt.Scanf("%d", &choice)
+
+	if choice > 0 && choice <= len(podList) {
+		ShowPodDetails(podList[choice-1])
+	}
+}
+
+func showServiceEndpoints(svc *corev1.Service) {
+	endpoints, err := auth.KubeClient.CoreV1().Endpoints(svc.Namespace).Get(context.Background(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		fmt.Printf("Endpoint bilgileri alınamadı: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\nEndpoint Bilgileri - %s:\n", svc.Name)
+	if len(endpoints.Subsets) == 0 {
+		fmt.Println("Bu service için aktif endpoint bulunamadı")
+		return
+	}
+
+	for i, subset := range endpoints.Subsets {
+		fmt.Printf("\nSubset %d:\n", i+1)
+
+		fmt.Println("\nAktif Adresler:")
+		for _, addr := range subset.Addresses {
+			fmt.Printf("- IP: %s\n", addr.IP)
+			if addr.TargetRef != nil {
+				fmt.Printf("  Pod: %s\n", addr.TargetRef.Name)
+			}
+		}
+
+		if len(subset.NotReadyAddresses) > 0 {
+			fmt.Println("\nHazır Olmayan Adresler:")
+			for _, addr := range subset.NotReadyAddresses {
+				fmt.Printf("- IP: %s\n", addr.IP)
+				if addr.TargetRef != nil {
+					fmt.Printf("  Pod: %s\n", addr.TargetRef.Name)
+				}
+			}
+		}
+
+		fmt.Println("\nPortlar:")
+		for _, port := range subset.Ports {
+			fmt.Printf("- %d/%s", port.Port, port.Protocol)
+			if port.Name != "" {
+				fmt.Printf(" (%s)", port.Name)
+			}
+			fmt.Println()
+		}
+	}
+}
+
+func showServicePorts(svc *corev1.Service) {
+	fmt.Printf("\nPort Yapılandırması - %s:\n", svc.Name)
+	fmt.Printf("%-15s %-15s %-15s %-15s %-15s\n",
+		"PORT", "TARGET PORT", "NODE PORT", "PROTOCOL", "PORT NAME")
+
+	for _, port := range svc.Spec.Ports {
+		nodePort := "-"
+		if port.NodePort != 0 {
+			nodePort = fmt.Sprintf("%d", port.NodePort)
+		}
+
+		portName := "-"
+		if port.Name != "" {
+			portName = port.Name
+		}
+
+		fmt.Printf("%-15d %-15v %-15s %-15s %-15s\n",
+			port.Port,
+			port.TargetPort.String(),
+			nodePort,
+			port.Protocol,
+			portName)
+	}
+}
+
+func getServiceEvents(svc *corev1.Service) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	events, err := auth.KubeClient.CoreV1().Events(svc.Namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("involvedObject.name=%s", svc.Name),
+	})
+	if err != nil {
+		fmt.Printf("Events alınamadı: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\nService Events - %s:\n", svc.Name)
+	fmt.Printf("%-20s %-12s %-20s %s\n", "ZAMAN", "TİP", "SEBEP", "MESAJ")
+	for _, event := range events.Items {
+		fmt.Printf("%-20s %-12s %-20s %s\n",
+			event.LastTimestamp.Format("2006-01-02 15:04:05"),
+			event.Type,
+			event.Reason,
+			event.Message)
+	}
+}
+
+func showServiceInfo(svc *corev1.Service) {
+	fmt.Printf("\nService Bilgileri - %s:\n", svc.Name)
 	fmt.Printf("  Type: %s\n", svc.Spec.Type)
 	fmt.Printf("  Cluster IP: %s\n", svc.Spec.ClusterIP)
 
