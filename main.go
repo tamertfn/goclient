@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"tamerGoClient/pkg/auth"
-	"tamerGoClient/pkg/create"
 	"tamerGoClient/pkg/info"
+	"tamerGoClient/pkg/resource"
 	"tamerGoClient/pkg/ui"
 )
 
@@ -19,7 +19,7 @@ func main() {
 		case 2:
 			info.HandleInfoMenu()
 		case 3:
-			create.HandleCreateMenu()
+			resource.HandleResourceMenu()
 		case 4:
 			fmt.Println("Programdan çıkılıyor...")
 			os.Exit(0)
