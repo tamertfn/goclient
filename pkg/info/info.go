@@ -224,13 +224,21 @@ func listPods() {
 	fmt.Scanf("%d", &choice)
 
 	if choice > 0 && choice <= len(podList) {
-		showPodDetails(podList[choice-1])
+		ShowPodDetails(podList[choice-1])
 	}
 }
 
-func showPodDetails(pod corev1.Pod) {
+// ShowPodDetails - Pod detaylarını gösteren ana menü fonksiyonu
+func ShowPodDetails(pod corev1.Pod) {
 	for {
-		fmt.Printf("\n=== Pod Detayları: %s ===\n", pod.Name)
+		// Her menü gösteriminde güncel pod bilgilerini al
+		updatedPod, err := auth.KubeClient.CoreV1().Pods(pod.Namespace).Get(context.Background(), pod.Name, metav1.GetOptions{})
+		if err != nil {
+			fmt.Printf("Pod bilgileri alınamadı: %v\n", err)
+			return
+		}
+
+		fmt.Printf("\n=== Pod Detayları: %s ===\n", updatedPod.Name)
 		fmt.Println("1. Genel Bilgiler")
 		fmt.Println("2. Container Durumları")
 		fmt.Println("3. Son Loglar")
@@ -244,15 +252,15 @@ func showPodDetails(pod corev1.Pod) {
 
 		switch choice {
 		case 1:
-			showPodGeneralInfo(pod)
+			ShowPodInfo(updatedPod)
 		case 2:
-			showPodContainerStatuses(pod)
+			ShowContainerStatuses(updatedPod)
 		case 3:
-			getPodLogs(pod.Name, pod.Namespace, false)
+			GetPodLogs(updatedPod.Name, updatedPod.Namespace, false)
 		case 4:
-			getPodLogs(pod.Name, pod.Namespace, true)
+			GetPodLogs(updatedPod.Name, updatedPod.Namespace, true)
 		case 5:
-			getPodEvents(pod)
+			GetPodEvents(updatedPod)
 		case 6:
 			return
 		default:
@@ -261,31 +269,44 @@ func showPodDetails(pod corev1.Pod) {
 	}
 }
 
-func showPodGeneralInfo(pod corev1.Pod) {
-	fmt.Printf("\nPod Adı: %s\n", pod.Name)
+// ShowPodInfo - Pod bilgilerini gösteren fonksiyon
+func ShowPodInfo(pod *corev1.Pod) {
+	fmt.Printf("\nPod Bilgileri:\n")
+	fmt.Printf("Pod Adı: %s\n", pod.Name)
 	fmt.Printf("Namespace: %s\n", pod.Namespace)
 	fmt.Printf("Node: %s\n", pod.Spec.NodeName)
 	fmt.Printf("IP: %s\n", pod.Status.PodIP)
-	fmt.Printf("Oluşturulma: %s\n", pod.CreationTimestamp.Format("2006-01-02 15:04:05"))
+
+	// Oluşturulma zamanını Türkiye saati olarak göster
+	if pod.CreationTimestamp.Time.IsZero() {
+		fmt.Println("Oluşturulma: Bilgi yok")
+	} else {
+		localTime := pod.CreationTimestamp.Time.Local()
+		fmt.Printf("Oluşturulma: %s\n", localTime.Format("2006-01-02 15:04:05"))
+	}
+
 	fmt.Printf("Durum: %s\n", pod.Status.Phase)
+
+	// QoS Sınıfı
 	fmt.Printf("QoS Sınıfı: %s\n", pod.Status.QOSClass)
 
-	if len(pod.Spec.Containers) > 0 {
-		fmt.Println("\nContainer'lar:")
-		for _, container := range pod.Spec.Containers {
-			fmt.Printf("- %s (Image: %s)\n", container.Name, container.Image)
-			if len(container.Ports) > 0 {
-				fmt.Print("  Portlar: ")
-				for _, port := range container.Ports {
-					fmt.Printf("%d/%s ", port.ContainerPort, port.Protocol)
+	fmt.Printf("\nContainer'lar:\n")
+	for _, container := range pod.Spec.Containers {
+		fmt.Printf("- %s (Image: %s)\n", container.Name, container.Image)
+		if len(container.Ports) > 0 {
+			fmt.Printf("  Portlar: ")
+			for i, port := range container.Ports {
+				if i > 0 {
+					fmt.Print(", ")
 				}
-				fmt.Println()
+				fmt.Printf("%d/%s", port.ContainerPort, port.Protocol)
 			}
+			fmt.Println()
 		}
 	}
 }
 
-func showPodContainerStatuses(pod corev1.Pod) {
+func ShowContainerStatuses(pod *corev1.Pod) {
 	fmt.Printf("\nContainer Durumları - Pod: %s\n", pod.Name)
 	for _, status := range pod.Status.ContainerStatuses {
 		fmt.Printf("\nContainer: %s\n", status.Name)
@@ -305,7 +326,8 @@ func showPodContainerStatuses(pod corev1.Pod) {
 	}
 }
 
-func getPodLogs(podName, namespace string, follow bool) {
+// GetPodLogs - Pod loglarını görüntüleyen fonksiyon
+func GetPodLogs(podName, namespace string, follow bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 
@@ -387,7 +409,7 @@ func getPodLogs(podName, namespace string, follow bool) {
 	}
 }
 
-func getPodEvents(pod corev1.Pod) {
+func GetPodEvents(pod *corev1.Pod) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
